@@ -16,15 +16,40 @@ type Meal = {
   photo_url: string | null;
   score_earned: number;
   created_at: string;
-  profiles: {
-    username: string;
-    avatar_url: string | null;
-  };
+  profiles: any;
   reactions: { id: string }[];
   comments: { id: string }[];
 };
 
 function MealCard({ item }: { item: Meal }) {
+  const [liked, setLiked] = React.useState(false);
+  const [reactionCount, setReactionCount] = React.useState(
+    item.reactions?.length ?? 0,
+  );
+
+  async function handleReaction() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    if (liked) {
+      await supabase
+        .from("reactions")
+        .delete()
+        .eq("meal_id", item.id)
+        .eq("user_id", user.id);
+      setReactionCount(reactionCount - 1);
+      setLiked(false);
+    } else {
+      await supabase
+        .from("reactions")
+        .insert({ meal_id: item.id, user_id: user.id, emoji: "🤤" });
+      setReactionCount(reactionCount + 1);
+      setLiked(true);
+    }
+  }
+
   return (
     <View style={styles.card}>
       <View style={styles.userRow}>
@@ -40,7 +65,11 @@ function MealCard({ item }: { item: Meal }) {
       <View style={styles.info}>
         <Text style={styles.mealName}>{item.name}</Text>
         <View style={styles.metaRow}>
-          <Text style={styles.meta}>❤️ {item.reactions?.length ?? 0}</Text>
+          <TouchableOpacity onPress={handleReaction} style={styles.reactionBtn}>
+            <Text style={styles.meta}>
+              {liked ? "🤤" : "😐"} {reactionCount}
+            </Text>
+          </TouchableOpacity>
           <Text style={styles.meta}>💬 {item.comments?.length ?? 0}</Text>
           {item.score_earned > 0 && (
             <View style={styles.scorePill}>
@@ -174,4 +203,6 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", marginTop: 80, gap: 8 },
   emptyText: { fontSize: 16, color: "#888" },
   emptySubText: { fontSize: 14, color: "#bbb" },
+
+  reactionBtn: { flexDirection: "row", alignItems: "center" },
 });

@@ -6,67 +6,105 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
+  Alert,
 } from "react-native";
+import { supabase } from "../services/supabase";
 
-const MOCK_PROFILE = {
-  name: "Marie Dupont",
-  username: "@marie",
-  meals: 48,
-  scoreTotal: 247,
-  scoreWeek: 18,
-  leaderboard: 2,
+type Profile = {
+  username: string;
+  avatar_url: string | null;
+  score_total: number;
+  score_week: number;
 };
 
-const MOCK_GRID = [
-  {
-    id: "1",
-    photo: "https://images.unsplash.com/photo-1612874742237-6526221588e3?w=200",
-  },
-  {
-    id: "2",
-    photo: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=200",
-  },
-  {
-    id: "3",
-    photo: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=200",
-  },
-  {
-    id: "4",
-    photo: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=200",
-  },
-  {
-    id: "5",
-    photo: "https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?w=200",
-  },
-  {
-    id: "6",
-    photo: "https://images.unsplash.com/photo-1567620905732-2d1ec7ab7445?w=200",
-  },
-];
+type Meal = {
+  id: string;
+  photo_url: string | null;
+  name: string;
+};
 
 export default function ProfileScreen() {
+  const [profile, setProfile] = React.useState<Profile | null>(null);
+  const [meals, setMeals] = React.useState<Meal[]>([]);
+  const [leaderboard, setLeaderboard] = React.useState(0);
+
+  async function loadProfile() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Charger le profil
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("username, avatar_url, score_total, score_week")
+      .eq("id", user.id)
+      .single();
+
+    if (profileData) setProfile(profileData);
+
+    // Charger les repas
+    const { data: mealsData } = await supabase
+      .from("meals")
+      .select("id, photo_url, name")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (mealsData) setMeals(mealsData);
+
+    // Calculer le rang dans le leaderboard
+    const { data: rankData } = await supabase
+      .from("profiles")
+      .select("id")
+      .gte("score_week", profileData?.score_week ?? 0);
+
+    if (rankData) setLeaderboard(rankData.length);
+  }
+
+  async function handleLogout() {
+    Alert.alert("Déconnexion", "Tu veux te déconnecter ?", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Déconnexion",
+        style: "destructive",
+        onPress: async () => {
+          await supabase.auth.signOut();
+        },
+      },
+    ]);
+  }
+
+  React.useEffect(() => {
+    loadProfile();
+  }, []);
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+          <Text style={styles.logoutText}>Déconnexion</Text>
+        </TouchableOpacity>
         <View style={styles.avatar} />
-        <Text style={styles.name}>{MOCK_PROFILE.name}</Text>
-        <Text style={styles.handle}>
-          {MOCK_PROFILE.username} · {MOCK_PROFILE.meals} repas
-        </Text>
+        <Text style={styles.name}>@{profile?.username ?? "..."}</Text>
+        <Text style={styles.handle}>{meals.length} repas</Text>
 
         {/* Triple score */}
         <View style={styles.scoreRow}>
           <View style={styles.scoreBox}>
-            <Text style={styles.scoreNum}>{MOCK_PROFILE.scoreTotal}</Text>
+            <Text style={styles.scoreNum}>
+              {profile?.score_total?.toFixed(1) ?? "0"}
+            </Text>
             <Text style={styles.scoreLbl}>Score à vie</Text>
           </View>
           <View style={styles.scoreBox}>
-            <Text style={styles.scoreNum}>{MOCK_PROFILE.scoreWeek}</Text>
+            <Text style={styles.scoreNum}>
+              {profile?.score_week?.toFixed(1) ?? "0"}
+            </Text>
             <Text style={styles.scoreLbl}>Cette semaine</Text>
           </View>
           <View style={styles.scoreBox}>
-            <Text style={styles.scoreNum}>#{MOCK_PROFILE.leaderboard}</Text>
+            <Text style={styles.scoreNum}>#{leaderboard}</Text>
             <Text style={styles.scoreLbl}>Leaderboard</Text>
           </View>
         </View>
@@ -74,13 +112,32 @@ export default function ProfileScreen() {
 
       {/* Grille repas */}
       <FlatList
-        data={MOCK_GRID}
+        data={meals}
         keyExtractor={(item) => item.id}
         numColumns={3}
         renderItem={({ item }) => (
-          <Image source={{ uri: item.photo }} style={styles.gridItem} />
+          <View style={styles.gridItem}>
+            {item.photo_url ? (
+              <Image
+                source={{ uri: item.photo_url }}
+                style={styles.gridPhoto}
+              />
+            ) : (
+              <View style={styles.gridPlaceholder}>
+                <Text style={styles.gridPlaceholderText}>🍽️</Text>
+              </View>
+            )}
+          </View>
         )}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>Aucun repas encore</Text>
+            <Text style={styles.emptySubText}>
+              Poste ton premier repas ! 🍽️
+            </Text>
+          </View>
+        }
       />
     </View>
   );
@@ -94,6 +151,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
+  logoutBtn: { position: "absolute", top: 56, right: 16 },
+  logoutText: { fontSize: 13, color: "#993C1D" },
   avatar: {
     width: 56,
     height: 56,
@@ -113,9 +172,17 @@ const styles = StyleSheet.create({
   },
   scoreNum: { fontSize: 20, fontWeight: "500", color: "#712B13" },
   scoreLbl: { fontSize: 10, color: "#993C1D", marginTop: 2 },
-  gridItem: {
-    width: "33.33%",
-    aspectRatio: 1,
-    padding: 1,
+  gridItem: { width: "33.33%", aspectRatio: 1, padding: 1 },
+  gridPhoto: { width: "100%", height: "100%" },
+  gridPlaceholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#FAECE7",
+    alignItems: "center",
+    justifyContent: "center",
   },
+  gridPlaceholderText: { fontSize: 24 },
+  empty: { alignItems: "center", marginTop: 60, gap: 8 },
+  emptyText: { fontSize: 16, color: "#888" },
+  emptySubText: { fontSize: 14, color: "#bbb" },
 });
