@@ -8,10 +8,12 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
-const MOCK_INGREDIENTS = ["pâtes", "lardons", "oeuf", "parmesan", "poivre"];
+import * as ImagePicker from "expo-image-picker";
+import { supabase } from "../services/supabase";
 
 export default function PostScreen() {
   const [mealName, setMealName] = React.useState("");
@@ -20,6 +22,54 @@ export default function PostScreen() {
   const [visibility, setVisibility] = React.useState<"public" | "private">(
     "public",
   );
+  const [photo, setPhoto] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+
+  async function pickPhoto() {
+    Alert.alert("Ajouter une photo", "Choisir une source", [
+      {
+        text: "📷 Prendre une photo",
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== "granted") {
+            Alert.alert(
+              "Permission refusée",
+              "On a besoin d'accéder à ta caméra.",
+            );
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.7,
+          });
+          if (!result.canceled) setPhoto(result.assets[0].uri);
+        },
+      },
+      {
+        text: "🖼️ Choisir depuis la galerie",
+        onPress: async () => {
+          const { status } =
+            await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (status !== "granted") {
+            Alert.alert(
+              "Permission refusée",
+              "On a besoin d'accéder à ta galerie.",
+            );
+            return;
+          }
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.7,
+          });
+          if (!result.canceled) setPhoto(result.assets[0].uri);
+        },
+      },
+      { text: "Annuler", style: "cancel" },
+    ]);
+  }
 
   function addIngredient() {
     if (inputIngredient.trim() === "") return;
@@ -31,24 +81,135 @@ export default function PostScreen() {
     setIngredients(ingredients.filter((_, i) => i !== index));
   }
 
+  async function uploadPhoto(uri: string): Promise<string | null> {
+    try {
+      const fileExt = uri.split(".").pop()?.toLowerCase() || "jpg";
+      const fileName = `${Date.now()}.${fileExt}`;
+      const formData = new FormData();
+      formData.append("file", {
+        uri,
+        name: fileName,
+        type: `image/${fileExt}`,
+      } as any);
+
+      const { data, error } = await supabase.storage
+        .from("meals")
+        .upload(fileName, formData, {
+          contentType: "multipart/form-data",
+        });
+
+      if (error) throw error;
+      const { data: urlData } = supabase.storage
+        .from("meals")
+        .getPublicUrl(fileName);
+      return urlData.publicUrl;
+    } catch (e) {
+      console.error("Upload error:", e);
+      return null;
+    }
+  }
+
+  async function handlePublish() {
+    if (!mealName.trim()) {
+      Alert.alert("Erreur", "Donne un nom à ton repas");
+      return;
+    }
+    if (ingredients.length === 0) {
+      Alert.alert("Erreur", "Ajoute au moins un ingrédient");
+      return;
+    }
+    setLoading(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Non connecté");
+
+      // Upload photo si présente
+      let photoUrl = null;
+      if (photo) photoUrl = await uploadPhoto(photo);
+
+      // Insérer le repas
+      const { data: meal, error: mealError } = await supabase
+        .from("meals")
+        .insert({
+          user_id: user.id,
+          name: mealName.trim(),
+          photo_url: photoUrl,
+          visibility,
+          score_earned: 0,
+        })
+        .select()
+        .single();
+      if (mealError) throw mealError;
+
+      // Insérer les ingrédients
+      for (const ing of ingredients) {
+        // Upsert ingrédient
+        const { data: ingredient } = await supabase
+          .from("ingredients")
+          .upsert({ name: ing }, { onConflict: "name" })
+          .select()
+          .single();
+
+        if (ingredient) {
+          // Vérifier si c'est nouveau pour l'utilisateur
+          const { data: existing } = await supabase
+            .from("meal_ingredients")
+            .select("id")
+            .eq("ingredient_id", ingredient.id)
+            .limit(1);
+
+          const isNew = !existing || existing.length === 0;
+          const points = isNew ? 1 : 0.1;
+
+          await supabase.from("meal_ingredients").insert({
+            meal_id: meal.id,
+            ingredient_id: ingredient.id,
+            is_new_for_user: isNew,
+            points_earned: points,
+          });
+
+          // Mettre à jour le score
+          await supabase.rpc("increment_score", {
+            user_id: user.id,
+            points,
+          });
+        }
+      }
+
+      Alert.alert("🎉 Repas publié !", "Ton repas a été ajouté au feed.");
+      setMealName("");
+      setIngredients([]);
+      setPhoto(null);
+    } catch (e: any) {
+      Alert.alert("Erreur", e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-        {/* Topbar */}
         <View style={styles.topbar}>
           <Text style={styles.topbarTitle}>Nouveau repas</Text>
         </View>
 
-        {/* Zone photo */}
-        <TouchableOpacity style={styles.photoZone}>
-          <Ionicons name="camera-outline" size={32} color="#993C1D" />
-          <Text style={styles.photoText}>Ajouter une photo</Text>
+        <TouchableOpacity style={styles.photoZone} onPress={pickPhoto}>
+          {photo ? (
+            <Image source={{ uri: photo }} style={styles.photoPreview} />
+          ) : (
+            <>
+              <Ionicons name="camera-outline" size={32} color="#993C1D" />
+              <Text style={styles.photoText}>Ajouter une photo</Text>
+            </>
+          )}
         </TouchableOpacity>
 
-        {/* Nom du plat */}
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Nom du plat</Text>
           <TextInput
@@ -60,7 +221,6 @@ export default function PostScreen() {
           />
         </View>
 
-        {/* Ingrédients */}
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Ingrédients</Text>
           <View style={styles.ingredientInput}>
@@ -91,7 +251,6 @@ export default function PostScreen() {
           </View>
         </View>
 
-        {/* Visibilité */}
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Visibilité</Text>
           <View style={styles.visibilityRow}>
@@ -130,9 +289,14 @@ export default function PostScreen() {
           </View>
         </View>
 
-        {/* Bouton publier */}
-        <TouchableOpacity style={styles.publishBtn}>
-          <Text style={styles.publishText}>Publier le repas</Text>
+        <TouchableOpacity
+          style={[styles.publishBtn, loading && styles.publishBtnDisabled]}
+          onPress={handlePublish}
+          disabled={loading}
+        >
+          <Text style={styles.publishText}>
+            {loading ? "Publication..." : "Publier le repas"}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -160,7 +324,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     backgroundColor: "#FAECE7",
+    overflow: "hidden",
   },
+  photoPreview: { width: "100%", height: "100%" },
   photoText: { fontSize: 14, color: "#993C1D" },
   field: { paddingHorizontal: 16, marginBottom: 20 },
   fieldLabel: {
@@ -180,11 +346,7 @@ const styles = StyleSheet.create({
     color: "#1a1a1a",
     backgroundColor: "#FAFAFA",
   },
-  ingredientInput: {
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 10,
-  },
+  ingredientInput: { flexDirection: "row", gap: 8, marginBottom: 10 },
   ingredientTextInput: {
     flex: 1,
     borderWidth: 1,
@@ -223,10 +385,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#FAFAFA",
   },
-  visBtnActive: {
-    borderColor: "#D85A30",
-    backgroundColor: "#FAECE7",
-  },
+  visBtnActive: { borderColor: "#D85A30", backgroundColor: "#FAECE7" },
   visBtnText: { fontSize: 13, color: "#888" },
   visBtnTextActive: { color: "#D85A30", fontWeight: "500" },
   publishBtn: {
@@ -237,5 +396,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 40,
   },
+  publishBtnDisabled: { opacity: 0.6 },
   publishText: { fontSize: 16, color: "#fff", fontWeight: "500" },
 });

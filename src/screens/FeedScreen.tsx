@@ -6,54 +6,47 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
+  RefreshControl,
 } from "react-native";
+import { supabase } from "../services/supabase";
 
-const MOCK_MEALS = [
-  {
-    id: "1",
-    user: "Marie",
-    meal: "Tagliatelles carbonara",
-    score: 3.2,
-    reactions: 8,
-    comments: 2,
-    photo: "https://images.unsplash.com/photo-1612874742237-6526221588e3?w=400",
-  },
-  {
-    id: "2",
-    user: "Lucas",
-    meal: "Buddha bowl avocat",
-    score: 5.1,
-    reactions: 14,
-    comments: 5,
-    photo: "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400",
-  },
-  {
-    id: "3",
-    user: "Sophie",
-    meal: "Ramen miso poulet",
-    score: 4.7,
-    reactions: 11,
-    comments: 3,
-    photo: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?w=400",
-  },
-];
+type Meal = {
+  id: string;
+  name: string;
+  photo_url: string | null;
+  score_earned: number;
+  created_at: string;
+  profiles: {
+    username: string;
+    avatar_url: string | null;
+  };
+  reactions: { id: string }[];
+  comments: { id: string }[];
+};
 
-function MealCard({ item }: { item: (typeof MOCK_MEALS)[0] }) {
+function MealCard({ item }: { item: Meal }) {
   return (
     <View style={styles.card}>
       <View style={styles.userRow}>
         <View style={styles.avatar} />
-        <Text style={styles.username}>{item.user}</Text>
+        <Text style={styles.username}>@{item.profiles?.username}</Text>
+        <Text style={styles.time}>
+          {new Date(item.created_at).toLocaleDateString("fr-FR")}
+        </Text>
       </View>
-      <Image source={{ uri: item.photo }} style={styles.photo} />
+      {item.photo_url && (
+        <Image source={{ uri: item.photo_url }} style={styles.photo} />
+      )}
       <View style={styles.info}>
-        <Text style={styles.mealName}>{item.meal}</Text>
+        <Text style={styles.mealName}>{item.name}</Text>
         <View style={styles.metaRow}>
-          <Text style={styles.meta}>❤️ {item.reactions}</Text>
-          <Text style={styles.meta}>💬 {item.comments}</Text>
-          <View style={styles.scorePill}>
-            <Text style={styles.scoreText}>+{item.score} pts</Text>
-          </View>
+          <Text style={styles.meta}>❤️ {item.reactions?.length ?? 0}</Text>
+          <Text style={styles.meta}>💬 {item.comments?.length ?? 0}</Text>
+          {item.score_earned > 0 && (
+            <View style={styles.scorePill}>
+              <Text style={styles.scoreText}>+{item.score_earned} pts</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -61,17 +54,68 @@ function MealCard({ item }: { item: (typeof MOCK_MEALS)[0] }) {
 }
 
 export default function FeedScreen() {
+  const [meals, setMeals] = React.useState<Meal[]>([]);
+  const [refreshing, setRefreshing] = React.useState(false);
+
+  async function loadMeals() {
+    const { data, error } = await supabase
+      .from("meals")
+      .select(
+        `
+        id,
+        name,
+        photo_url,
+        score_earned,
+        created_at,
+        profiles ( username, avatar_url ),
+        reactions ( id ),
+        comments ( id )
+      `,
+      )
+      .eq("visibility", "public")
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) console.error(error);
+    else setMeals(data as Meal[]);
+  }
+
+  async function onRefresh() {
+    setRefreshing(true);
+    await loadMeals();
+    setRefreshing(false);
+  }
+
+  React.useEffect(() => {
+    loadMeals();
+  }, []);
+
   return (
     <View style={styles.container}>
       <View style={styles.topbar}>
         <Text style={styles.logo}>feed.</Text>
       </View>
       <FlatList
-        data={MOCK_MEALS}
+        data={meals}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <MealCard item={item} />}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#D85A30"
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>Aucun repas pour l'instant.</Text>
+            <Text style={styles.emptySubText}>
+              Poste ton premier repas ! 🍽️
+            </Text>
+          </View>
+        }
       />
     </View>
   );
@@ -108,6 +152,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5C4B3",
   },
   username: { fontSize: 13, color: "#444", fontWeight: "500" },
+  time: { fontSize: 11, color: "#bbb", marginLeft: "auto" },
   photo: { width: "100%", height: 220 },
   info: { padding: 12 },
   mealName: {
@@ -126,4 +171,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   scoreText: { fontSize: 12, color: "#633806", fontWeight: "500" },
+  empty: { alignItems: "center", marginTop: 80, gap: 8 },
+  emptyText: { fontSize: 16, color: "#888" },
+  emptySubText: { fontSize: 14, color: "#bbb" },
 });
