@@ -3,28 +3,9 @@ import { View, Text } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
-
-function FeedScreen() {
-  return (
-    <View style={{ flex: 1 }}>
-      <Text>Feed</Text>
-    </View>
-  );
-}
-function PostScreen() {
-  return (
-    <View style={{ flex: 1 }}>
-      <Text>Poster</Text>
-    </View>
-  );
-}
-function ProfileScreen() {
-  return (
-    <View style={{ flex: 1 }}>
-      <Text>Profil</Text>
-    </View>
-  );
-}
+import FeedScreen from "../screens/FeedScreen";
+import ProfileScreen from "../screens/ProfileScreen";
+import PostScreen from "../screens/PostScreen";
 
 const Tab = createBottomTabNavigator();
 
