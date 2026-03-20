@@ -125,11 +125,9 @@ export default function PostScreen() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Non connecté");
 
-      // Upload photo si présente
       let photoUrl = null;
       if (photo) photoUrl = await uploadPhoto(photo);
 
-      // Insérer le repas
       const { data: meal, error: mealError } = await supabase
         .from("meals")
         .insert({
@@ -143,9 +141,7 @@ export default function PostScreen() {
         .single();
       if (mealError) throw mealError;
 
-      // Insérer les ingrédients
       for (const ing of ingredients) {
-        // Upsert ingrédient
         const { data: ingredient } = await supabase
           .from("ingredients")
           .upsert({ name: ing }, { onConflict: "name" })
@@ -153,7 +149,6 @@ export default function PostScreen() {
           .single();
 
         if (ingredient) {
-          // Vérifier si c'est nouveau pour l'utilisateur
           const { data: existing } = await supabase
             .from("meal_ingredients")
             .select("id")
@@ -170,13 +165,15 @@ export default function PostScreen() {
             points_earned: points,
           });
 
-          // Mettre à jour le score
           await supabase.rpc("increment_score", {
             user_id: user.id,
             points,
           });
         }
       }
+
+      // Vérifier les badges APRÈS la boucle
+      await supabase.rpc("check_and_award_badges", { p_user_id: user.id });
 
       Alert.alert("🎉 Repas publié !", "Ton repas a été ajouté au feed.");
       setMealName("");
