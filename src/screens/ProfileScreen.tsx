@@ -14,6 +14,7 @@ import { supabase } from "../services/supabase";
 import BadgesScreen from "./BadgesScreen";
 import ChallengesScreen from "./ChallengesScreen";
 import SearchScreen from "./SearchScreen";
+import IngredientOfWeekScreen from "./IngredientOfWeekScreen";
 
 type Profile = {
   username: string;
@@ -32,7 +33,7 @@ type Badge = {
   type: string;
 };
 
-type ScreenView = "profile" | "badges" | "challenges" | "search";
+type ScreenView = "profile" | "badges" | "challenges" | "search" | "ingredient";
 
 const BADGE_CONFIG: Record<string, { emoji: string; label: string }> = {
   first_meal: { emoji: "🥚", label: "Premier repas" },
@@ -145,6 +146,21 @@ export default function ProfileScreen() {
     );
   }
 
+  if (currentView === "ingredient") {
+    return (
+      <View style={{ flex: 1 }}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => setCurrentView("profile")}
+        >
+          <Ionicons name="arrow-back" size={24} color="#712B13" />
+          <Text style={styles.backText}>Profil</Text>
+        </TouchableOpacity>
+        <IngredientOfWeekScreen />
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -191,6 +207,15 @@ export default function ProfileScreen() {
           <Ionicons name="flag-outline" size={20} color="#D85A30" />
           <Text style={styles.shortcutText}>Défis</Text>
           <Text style={styles.shortcutCount}>Cette semaine</Text>
+          <Ionicons name="chevron-forward" size={16} color="#bbb" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.shortcutBtn}
+          onPress={() => setCurrentView("ingredient")}
+        >
+          <Ionicons name="leaf-outline" size={20} color="#D85A30" />
+          <Text style={styles.shortcutText}>Défi de la semaine</Text>
+          <Text style={styles.shortcutCount}>Ingrédient imposé</Text>
           <Ionicons name="chevron-forward" size={16} color="#bbb" />
         </TouchableOpacity>
         <TouchableOpacity
