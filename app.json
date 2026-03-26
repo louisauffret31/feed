@@ -1,31 +1,54 @@
 {
   "expo": {
-    "name": "feed",
+    "name": "Feed",
     "slug": "feed",
     "version": "1.0.0",
-    "newArchEnabled": true,
     "orientation": "portrait",
+    "newArchEnabled": true,
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FAECE7"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.feed.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Feed utilise la caméra pour photographier tes repas.",
+        "NSPhotoLibraryUsageDescription": "Feed accède à ta galerie pour choisir une photo de ton repas.",
+        "NSContactsUsageDescription": "Feed accède à tes contacts pour trouver tes amis."
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.feed.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "READ_CONTACTS",
+        "NOTIFICATIONS"
+      ]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
+    "plugins": [
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Feed accède à ta galerie pour choisir une photo de ton repas.",
+          "cameraPermission": "Feed utilise la caméra pour photographier tes repas."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4968986b-5193-4421-b314-1d5b13783add"
+      }
     }
   }
 }

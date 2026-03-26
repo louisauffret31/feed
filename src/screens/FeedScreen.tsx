@@ -9,6 +9,8 @@ import {
   RefreshControl,
 } from "react-native";
 import { supabase } from "../services/supabase";
+import { sendPushNotification } from "../services/notifications";
+import MealDetailScreen from "./MealDetailScreen";
 
 type Meal = {
   id: string;
@@ -21,7 +23,7 @@ type Meal = {
   comments: { id: string }[];
 };
 
-function MealCard({ item }: { item: Meal }) {
+function MealCard({ item, onPress }: { item: Meal; onPress: () => void }) {
   const [liked, setLiked] = React.useState(false);
   const [reactionCount, setReactionCount] = React.useState(
     item.reactions?.length ?? 0,
@@ -48,10 +50,29 @@ function MealCard({ item }: { item: Meal }) {
       setReactionCount(reactionCount + 1);
       setLiked(true);
     }
+
+    const { data: mealOwner } = await supabase
+      .from("meals")
+      .select("user_id, profiles(username, push_token)")
+      .eq("id", item.id)
+      .single();
+
+    const owner = mealOwner?.profiles as any;
+    if (owner?.push_token && mealOwner?.user_id !== user.id) {
+      await sendPushNotification(
+        owner.push_token,
+        "🤤 Nouveau réaction !",
+        `${user.email} a réagi à ton repas`,
+      );
+    }
   }
 
   return (
-    <View style={styles.card}>
+    <TouchableOpacity
+      style={styles.card}
+      onPress={onPress}
+      activeOpacity={0.95}
+    >
       <View style={styles.userRow}>
         <View style={styles.avatar} />
         <Text style={styles.username}>@{item.profiles?.username}</Text>
@@ -65,7 +86,13 @@ function MealCard({ item }: { item: Meal }) {
       <View style={styles.info}>
         <Text style={styles.mealName}>{item.name}</Text>
         <View style={styles.metaRow}>
-          <TouchableOpacity onPress={handleReaction} style={styles.reactionBtn}>
+          <TouchableOpacity
+            onPress={(e) => {
+              e.stopPropagation();
+              handleReaction();
+            }}
+            style={styles.reactionBtn}
+          >
             <Text style={styles.meta}>
               {liked ? "🤤" : "😐"} {reactionCount}
             </Text>
@@ -78,24 +105,24 @@ function MealCard({ item }: { item: Meal }) {
           )}
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 export default function FeedScreen() {
   const [meals, setMeals] = React.useState<Meal[]>([]);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [selectedMealId, setSelectedMealId] = React.useState<string | null>(
+    null,
+  );
 
   async function loadMeals() {
     const { data, error } = await supabase
       .from("meals")
       .select(
         `
-        id,
-        name,
-        photo_url,
-        score_earned,
-        created_at,
+        id, name, photo_url, score_earned, created_at,
         profiles ( username, avatar_url ),
         reactions ( id ),
         comments ( id )
@@ -106,7 +133,8 @@ export default function FeedScreen() {
       .limit(20);
 
     if (error) console.error(error);
-    else setMeals(data as Meal[]);
+    else setMeals(data as unknown as Meal[]);
+    setLoading(false);
   }
 
   async function onRefresh() {
@@ -119,6 +147,34 @@ export default function FeedScreen() {
     loadMeals();
   }, []);
 
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.topbar}>
+          <Text style={styles.logo}>feed.</Text>
+        </View>
+        <View style={styles.skeletonList}>
+          {[1, 2, 3].map((i) => (
+            <View key={i} style={styles.skeletonCard}>
+              <View style={styles.skeletonUser} />
+              <View style={styles.skeletonPhoto} />
+              <View style={styles.skeletonText} />
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (selectedMealId) {
+    return (
+      <MealDetailScreen
+        mealId={selectedMealId}
+        onBack={() => setSelectedMealId(null)}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.topbar}>
@@ -127,7 +183,9 @@ export default function FeedScreen() {
       <FlatList
         data={meals}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <MealCard item={item} />}
+        renderItem={({ item }) => (
+          <MealCard item={item} onPress={() => setSelectedMealId(item.id)} />
+        )}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -203,6 +261,32 @@ const styles = StyleSheet.create({
   empty: { alignItems: "center", marginTop: 80, gap: 8 },
   emptyText: { fontSize: 16, color: "#888" },
   emptySubText: { fontSize: 14, color: "#bbb" },
-
   reactionBtn: { flexDirection: "row", alignItems: "center" },
+  skeletonList: { padding: 12, gap: 16 },
+  skeletonCard: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F1EFE8",
+    gap: 8,
+    padding: 10,
+  },
+  skeletonUser: {
+    width: 120,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#F1EFE8",
+  },
+  skeletonPhoto: {
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+    backgroundColor: "#F1EFE8",
+  },
+  skeletonText: {
+    width: "60%",
+    height: 14,
+    borderRadius: 8,
+    backgroundColor: "#F1EFE8",
+  },
 });
