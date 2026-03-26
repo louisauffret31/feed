@@ -34,7 +34,7 @@ export default function PostScreen() {
           if (status !== "granted") {
             Alert.alert(
               "Permission refusée",
-              "On a besoin d'accéder à ta caméra.",
+              "Va dans Paramètres > Applications > Feed > Permissions pour autoriser la caméra.",
             );
             return;
           }
@@ -54,7 +54,7 @@ export default function PostScreen() {
           if (status !== "granted") {
             Alert.alert(
               "Permission refusée",
-              "On a besoin d'accéder à ta galerie.",
+              "Va dans Paramètres > Applications > Feed > Permissions pour autoriser la galerie.",
             );
             return;
           }

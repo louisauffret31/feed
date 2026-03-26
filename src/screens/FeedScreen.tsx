@@ -28,6 +28,8 @@ function MealCard({ item, onPress }: { item: Meal; onPress: () => void }) {
   const [reactionCount, setReactionCount] = React.useState(
     item.reactions?.length ?? 0,
   );
+  const [showHeart, setShowHeart] = React.useState(false);
+  const lastTap = React.useRef<number>(0);
 
   async function handleReaction() {
     const {
@@ -67,10 +69,24 @@ function MealCard({ item, onPress }: { item: Meal; onPress: () => void }) {
     }
   }
 
+  function handleDoubleTap() {
+    const now = Date.now();
+    if (now - lastTap.current < 300) {
+      if (!liked) {
+        handleReaction();
+        setShowHeart(true);
+        setTimeout(() => setShowHeart(false), 800);
+      }
+    } else {
+      onPress();
+    }
+    lastTap.current = now;
+  }
+
   return (
     <TouchableOpacity
       style={styles.card}
-      onPress={onPress}
+      onPress={handleDoubleTap}
       activeOpacity={0.95}
     >
       <View style={styles.userRow}>
@@ -80,9 +96,18 @@ function MealCard({ item, onPress }: { item: Meal; onPress: () => void }) {
           {new Date(item.created_at).toLocaleDateString("fr-FR")}
         </Text>
       </View>
-      {item.photo_url && (
-        <Image source={{ uri: item.photo_url }} style={styles.photo} />
-      )}
+
+      <View style={styles.photoContainer}>
+        {item.photo_url && (
+          <Image source={{ uri: item.photo_url }} style={styles.photo} />
+        )}
+        {showHeart && (
+          <View style={styles.heartOverlay}>
+            <Text style={styles.heartEmoji}>🤤</Text>
+          </View>
+        )}
+      </View>
+
       <View style={styles.info}>
         <Text style={styles.mealName}>{item.name}</Text>
         <View style={styles.metaRow}>
@@ -289,4 +314,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F1EFE8",
   },
+
+  photoContainer: { position: "relative" },
+  heartOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  heartEmoji: { fontSize: 80 },
 });
