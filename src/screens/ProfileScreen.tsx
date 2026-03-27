@@ -15,6 +15,7 @@ import BadgesScreen from "./BadgesScreen";
 import ChallengesScreen from "./ChallengesScreen";
 import SearchScreen from "./SearchScreen";
 import IngredientOfWeekScreen from "./IngredientOfWeekScreen";
+import EditProfileScreen from "./EditProfileScreen";
 
 type Profile = {
   username: string;
@@ -33,7 +34,13 @@ type Badge = {
   type: string;
 };
 
-type ScreenView = "profile" | "badges" | "challenges" | "search" | "ingredient";
+type ScreenView =
+  | "profile"
+  | "badges"
+  | "challenges"
+  | "search"
+  | "ingredient"
+  | "edit";
 
 const BADGE_CONFIG: Record<string, { emoji: string; label: string }> = {
   first_meal: { emoji: "🥚", label: "Premier repas" },
@@ -90,6 +97,25 @@ export default function ProfileScreen() {
         text: "Déconnexion",
         style: "destructive",
         onPress: async () => await supabase.auth.signOut(),
+      },
+    ]);
+  }
+
+  async function handleDeleteMeal(mealId: string) {
+    Alert.alert("Supprimer ce repas", "Cette action est irréversible.", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer",
+        style: "destructive",
+        onPress: async () => {
+          const { error } = await supabase
+            .from("meals")
+            .delete()
+            .eq("id", mealId);
+          if (!error) {
+            setMeals(meals.filter((m) => m.id !== mealId));
+          }
+        },
       },
     ]);
   }
@@ -161,11 +187,31 @@ export default function ProfileScreen() {
     );
   }
 
+  if (currentView === "edit") {
+    return (
+      <EditProfileScreen
+        onBack={() => {
+          setCurrentView("profile");
+          loadProfile();
+        }}
+      />
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Text style={styles.logoutText}>Déconnexion</Text>
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={() => setCurrentView("edit")}
+        >
+          <Ionicons name="settings-outline" size={20} color="#993C1D" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.editBtn}
+          onPress={() => setCurrentView("edit")}
+        >
+          <Ionicons name="pencil-outline" size={18} color="#993C1D" />
         </TouchableOpacity>
         <View style={styles.avatar} />
         <Text style={styles.name}>@{profile?.username ?? "..."}</Text>
@@ -251,7 +297,12 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>Mes repas</Text>
         <View style={styles.grid}>
           {meals.map((item) => (
-            <View key={item.id} style={styles.gridItem}>
+            <TouchableOpacity
+              key={item.id}
+              style={styles.gridItem}
+              onLongPress={() => handleDeleteMeal(item.id)}
+              activeOpacity={0.8}
+            >
               {item.photo_url ? (
                 <Image
                   source={{ uri: item.photo_url }}
@@ -262,9 +313,12 @@ export default function ProfileScreen() {
                   <Text style={styles.gridPlaceholderText}>🍽️</Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
+        <Text style={styles.deleteHint}>
+          Appuie longtemps sur un repas pour le supprimer
+        </Text>
       </View>
     </ScrollView>
   );
@@ -281,6 +335,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: "#FAECE7",
   },
+  editBtn: { position: "absolute", top: 56, right: 90 },
   backText: { fontSize: 16, color: "#712B13", fontWeight: "500" },
   header: {
     backgroundColor: "#FAECE7",
@@ -306,6 +361,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     alignItems: "center",
+  },
+  deleteHint: {
+    fontSize: 11,
+    color: "#bbb",
+    textAlign: "center",
+    marginTop: 8,
   },
   scoreNum: { fontSize: 20, fontWeight: "500", color: "#712B13" },
   scoreLbl: { fontSize: 10, color: "#993C1D", marginTop: 2 },

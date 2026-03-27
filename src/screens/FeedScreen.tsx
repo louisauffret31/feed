@@ -11,6 +11,7 @@ import {
 import { supabase } from "../services/supabase";
 import { sendPushNotification } from "../services/notifications";
 import MealDetailScreen from "./MealDetailScreen";
+import UserProfileScreen from "./UserProfileScreen";
 
 type Meal = {
   id: string;
@@ -18,18 +19,43 @@ type Meal = {
   photo_url: string | null;
   score_earned: number;
   created_at: string;
-  profiles: any;
+  profiles: { id: string; username: string; avatar_url: string | null } | null;
   reactions: { id: string }[];
   comments: { id: string }[];
 };
 
-function MealCard({ item, onPress }: { item: Meal; onPress: () => void }) {
+function MealCard({
+  item,
+  onPress,
+  onUserPress,
+}: {
+  item: Meal;
+  onPress: () => void;
+  onUserPress: () => void;
+}) {
   const [liked, setLiked] = React.useState(false);
   const [reactionCount, setReactionCount] = React.useState(
     item.reactions?.length ?? 0,
   );
   const [showHeart, setShowHeart] = React.useState(false);
   const lastTap = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    async function checkLiked() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("reactions")
+        .select("id")
+        .eq("meal_id", item.id)
+        .eq("user_id", user.id)
+        .single();
+      setLiked(!!data);
+    }
+    checkLiked();
+  }, []);
 
   async function handleReaction() {
     const {
@@ -89,13 +115,13 @@ function MealCard({ item, onPress }: { item: Meal; onPress: () => void }) {
       onPress={handleDoubleTap}
       activeOpacity={0.95}
     >
-      <View style={styles.userRow}>
+      <TouchableOpacity style={styles.userRow} onPress={onUserPress}>
         <View style={styles.avatar} />
         <Text style={styles.username}>@{item.profiles?.username}</Text>
         <Text style={styles.time}>
           {new Date(item.created_at).toLocaleDateString("fr-FR")}
         </Text>
-      </View>
+      </TouchableOpacity>
 
       <View style={styles.photoContainer}>
         {item.photo_url && (
@@ -141,6 +167,9 @@ export default function FeedScreen() {
   const [selectedMealId, setSelectedMealId] = React.useState<string | null>(
     null,
   );
+  const [selectedUserId, setSelectedUserId] = React.useState<string | null>(
+    null,
+  );
 
   async function loadMeals() {
     const { data, error } = await supabase
@@ -148,7 +177,7 @@ export default function FeedScreen() {
       .select(
         `
         id, name, photo_url, score_earned, created_at,
-        profiles ( username, avatar_url ),
+        profiles ( id, username, avatar_url ),
         reactions ( id ),
         comments ( id )
       `,
@@ -191,6 +220,15 @@ export default function FeedScreen() {
     );
   }
 
+  if (selectedUserId) {
+    return (
+      <UserProfileScreen
+        userId={selectedUserId}
+        onBack={() => setSelectedUserId(null)}
+      />
+    );
+  }
+
   if (selectedMealId) {
     return (
       <MealDetailScreen
@@ -209,7 +247,11 @@ export default function FeedScreen() {
         data={meals}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <MealCard item={item} onPress={() => setSelectedMealId(item.id)} />
+          <MealCard
+            item={item}
+            onPress={() => setSelectedMealId(item.id)}
+            onUserPress={() => setSelectedUserId(item.profiles?.id ?? null)}
+          />
         )}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
@@ -314,7 +356,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#F1EFE8",
   },
-
   photoContainer: { position: "relative" },
   heartOverlay: {
     position: "absolute",
