@@ -14,16 +14,18 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { supabase } from "../services/supabase";
+import IngredientSearch from "../components/IngredientSearch";
+import { useFeedRefresh } from "../hooks/useFeedRefresh";
 
 export default function PostScreen() {
   const [mealName, setMealName] = React.useState("");
   const [ingredients, setIngredients] = React.useState<string[]>([]);
-  const [inputIngredient, setInputIngredient] = React.useState("");
   const [visibility, setVisibility] = React.useState<"public" | "private">(
     "public",
   );
   const [photo, setPhoto] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+  const { refresh } = useFeedRefresh();
 
   async function pickPhoto() {
     Alert.alert("Ajouter une photo", "Choisir une source", [
@@ -71,12 +73,6 @@ export default function PostScreen() {
     ]);
   }
 
-  function addIngredient() {
-    if (inputIngredient.trim() === "") return;
-    setIngredients([...ingredients, inputIngredient.trim().toLowerCase()]);
-    setInputIngredient("");
-  }
-
   function removeIngredient(index: number) {
     setIngredients(ingredients.filter((_, i) => i !== index));
   }
@@ -91,13 +87,9 @@ export default function PostScreen() {
         name: fileName,
         type: `image/${fileExt}`,
       } as any);
-
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from("meals")
-        .upload(fileName, formData, {
-          contentType: "multipart/form-data",
-        });
-
+        .upload(fileName, formData, { contentType: "multipart/form-data" });
       if (error) throw error;
       const { data: urlData } = supabase.storage
         .from("meals")
@@ -128,6 +120,10 @@ export default function PostScreen() {
       let photoUrl = null;
       if (photo) photoUrl = await uploadPhoto(photo);
 
+      let totalHealth = 0;
+      let totalOriginality = 0;
+      let scoredCount = 0;
+
       const { data: meal, error: mealError } = await supabase
         .from("meals")
         .insert({
@@ -136,17 +132,35 @@ export default function PostScreen() {
           photo_url: photoUrl,
           visibility,
           score_earned: 0,
+          health_score: 0,
+          originality_score: 0,
         })
         .select()
         .single();
       if (mealError) throw mealError;
 
       for (const ing of ingredients) {
-        const { data: ingredient } = await supabase
+        // Cherche d'abord si l'ingrédient existe
+        let { data: ingredient } = await supabase
           .from("ingredients")
-          .upsert({ name: ing }, { onConflict: "name" })
-          .select()
+          .select("id, name, health_score, originality_score, status")
+          .eq("name", ing)
           .single();
+
+        // Si pas trouvé, on le crée
+        if (!ingredient) {
+          const { data: newIngredient } = await supabase
+            .from("ingredients")
+            .insert({
+              name: ing,
+              status: "pending",
+              health_score: 3,
+              originality_score: 3,
+            })
+            .select()
+            .single();
+          ingredient = newIngredient;
+        }
 
         if (ingredient) {
           const { data: existing } = await supabase
@@ -169,12 +183,40 @@ export default function PostScreen() {
             user_id: user.id,
             points,
           });
+
+          if (ingredient.health_score) {
+            totalHealth += ingredient.health_score;
+            totalOriginality += ingredient.originality_score;
+            scoredCount++;
+          }
         }
       }
 
-      // Vérifier les badges APRÈS la boucle
+      console.log(
+        "scoredCount:",
+        scoredCount,
+        "totalHealth:",
+        totalHealth,
+        "totalOriginality:",
+        totalOriginality,
+      );
+
+      if (scoredCount > 0) {
+        const { error: updateError } = await supabase
+          .from("meals")
+          .update({
+            health_score: Math.round((totalHealth / scoredCount) * 10) / 10,
+            originality_score:
+              Math.round((totalOriginality / scoredCount) * 10) / 10,
+          })
+          .eq("id", meal.id);
+        console.log("Update error:", updateError);
+      }
+
       await supabase.rpc("check_and_award_badges", { p_user_id: user.id });
 
+      // refresh APRÈS que tout soit terminé
+      refresh();
       Alert.alert("🎉 Repas publié !", "Ton repas a été ajouté au feed.");
       setMealName("");
       setIngredients([]);
@@ -220,20 +262,14 @@ export default function PostScreen() {
 
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>Ingrédients</Text>
-          <View style={styles.ingredientInput}>
-            <TextInput
-              style={styles.ingredientTextInput}
-              placeholder="Ajouter un ingrédient..."
-              placeholderTextColor="#bbb"
-              value={inputIngredient}
-              onChangeText={setInputIngredient}
-              onSubmitEditing={addIngredient}
-              returnKeyType="done"
-            />
-            <TouchableOpacity onPress={addIngredient} style={styles.addBtn}>
-              <Ionicons name="add" size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
+          <IngredientSearch
+            onAdd={(name: string) => {
+              if (!ingredients.includes(name)) {
+                setIngredients([...ingredients, name]);
+              }
+            }}
+            selectedIngredients={ingredients}
+          />
           <View style={styles.chips}>
             {ingredients.map((ing, index) => (
               <TouchableOpacity
@@ -335,17 +371,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   input: {
-    borderWidth: 1,
-    borderColor: "#F1EFE8",
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
-    color: "#1a1a1a",
-    backgroundColor: "#FAFAFA",
-  },
-  ingredientInput: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  ingredientTextInput: {
-    flex: 1,
     borderWidth: 1,
     borderColor: "#F1EFE8",
     borderRadius: 10,

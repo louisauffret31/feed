@@ -12,12 +12,15 @@ import { supabase } from "../services/supabase";
 import { sendPushNotification } from "../services/notifications";
 import MealDetailScreen from "./MealDetailScreen";
 import UserProfileScreen from "./UserProfileScreen";
+import { useFeedRefresh } from "../hooks/useFeedRefresh";
 
 type Meal = {
   id: string;
   name: string;
   photo_url: string | null;
   score_earned: number;
+  health_score: number;
+  originality_score: number;
   created_at: string;
   profiles: { id: string; username: string; avatar_url: string | null } | null;
   reactions: { id: string }[];
@@ -136,6 +139,44 @@ function MealCard({
 
       <View style={styles.info}>
         <Text style={styles.mealName}>{item.name}</Text>
+
+        {(item.health_score > 0 || item.originality_score > 0) && (
+          <View style={styles.scoresRow}>
+            <View style={styles.scoreItem}>
+              <Text style={styles.scoreEmoji}>🥗</Text>
+              <View style={styles.scoreDots}>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.scoreDot,
+                      i <= Math.round(item.health_score)
+                        ? styles.dotGreen
+                        : styles.dotEmpty,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
+            <View style={styles.scoreItem}>
+              <Text style={styles.scoreEmoji}>✨</Text>
+              <View style={styles.scoreDots}>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <View
+                    key={i}
+                    style={[
+                      styles.scoreDot,
+                      i <= Math.round(item.originality_score)
+                        ? styles.dotAmber
+                        : styles.dotEmpty,
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
+
         <View style={styles.metaRow}>
           <TouchableOpacity
             onPress={(e) => {
@@ -160,6 +201,109 @@ function MealCard({
   );
 }
 
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#fff" },
+  topbar: {
+    paddingTop: 56,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1EFE8",
+  },
+  logo: { fontSize: 24, fontWeight: "500", color: "#712B13" },
+  list: { padding: 12, gap: 16 },
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F1EFE8",
+  },
+  userRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    gap: 8,
+  },
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F5C4B3",
+  },
+  username: { fontSize: 13, color: "#444", fontWeight: "500" },
+  time: { fontSize: 11, color: "#bbb", marginLeft: "auto" },
+  photo: { width: "100%", height: 220 },
+  info: { padding: 12 },
+  mealName: {
+    fontSize: 15,
+    fontWeight: "500",
+    color: "#1a1a1a",
+    marginBottom: 8,
+  },
+  scoresRow: { flexDirection: "row", gap: 16, marginBottom: 8 },
+  scoreItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  scoreEmoji: { fontSize: 14 },
+  scoreDots: { flexDirection: "row", gap: 3 },
+  scoreDot: { width: 8, height: 8, borderRadius: 4 },
+  dotGreen: { backgroundColor: "#1D9E75" },
+  dotAmber: { backgroundColor: "#EF9F27" },
+  dotEmpty: { backgroundColor: "#F1EFE8" },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  meta: { fontSize: 13, color: "#888" },
+  scorePill: {
+    marginLeft: "auto",
+    backgroundColor: "#FAEEDA",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  scoreText: { fontSize: 12, color: "#633806", fontWeight: "500" },
+  empty: { alignItems: "center", marginTop: 80, gap: 8 },
+  emptyText: { fontSize: 16, color: "#888" },
+  emptySubText: { fontSize: 14, color: "#bbb" },
+  reactionBtn: { flexDirection: "row", alignItems: "center" },
+  skeletonList: { padding: 12, gap: 16 },
+  skeletonCard: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#F1EFE8",
+    gap: 8,
+    padding: 10,
+  },
+  skeletonUser: {
+    width: 120,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#F1EFE8",
+  },
+  skeletonPhoto: {
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+    backgroundColor: "#F1EFE8",
+  },
+  skeletonText: {
+    width: "60%",
+    height: 14,
+    borderRadius: 8,
+    backgroundColor: "#F1EFE8",
+  },
+  photoContainer: { position: "relative" },
+  heartOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.15)",
+  },
+  heartEmoji: { fontSize: 80 },
+});
+
 export default function FeedScreen() {
   const [meals, setMeals] = React.useState<Meal[]>([]);
   const [refreshing, setRefreshing] = React.useState(false);
@@ -170,13 +314,14 @@ export default function FeedScreen() {
   const [selectedUserId, setSelectedUserId] = React.useState<string | null>(
     null,
   );
+  const { refreshKey } = useFeedRefresh();
 
   async function loadMeals() {
     const { data, error } = await supabase
       .from("meals")
       .select(
         `
-        id, name, photo_url, score_earned, created_at,
+        id, name, photo_url, score_earned, health_score, originality_score, created_at,
         profiles ( id, username, avatar_url ),
         reactions ( id ),
         comments ( id )
@@ -199,7 +344,7 @@ export default function FeedScreen() {
 
   React.useEffect(() => {
     loadMeals();
-  }, []);
+  }, [refreshKey]);
 
   if (loading) {
     return (
@@ -274,98 +419,3 @@ export default function FeedScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  topbar: {
-    paddingTop: 56,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1EFE8",
-  },
-  logo: { fontSize: 24, fontWeight: "500", color: "#712B13" },
-  list: { padding: 12, gap: 16 },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F1EFE8",
-  },
-  userRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    gap: 8,
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#F5C4B3",
-  },
-  username: { fontSize: 13, color: "#444", fontWeight: "500" },
-  time: { fontSize: 11, color: "#bbb", marginLeft: "auto" },
-  photo: { width: "100%", height: 220 },
-  info: { padding: 12 },
-  mealName: {
-    fontSize: 15,
-    fontWeight: "500",
-    color: "#1a1a1a",
-    marginBottom: 8,
-  },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  meta: { fontSize: 13, color: "#888" },
-  scorePill: {
-    marginLeft: "auto",
-    backgroundColor: "#FAEEDA",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 12,
-  },
-  scoreText: { fontSize: 12, color: "#633806", fontWeight: "500" },
-  empty: { alignItems: "center", marginTop: 80, gap: 8 },
-  emptyText: { fontSize: 16, color: "#888" },
-  emptySubText: { fontSize: 14, color: "#bbb" },
-  reactionBtn: { flexDirection: "row", alignItems: "center" },
-  skeletonList: { padding: 12, gap: 16 },
-  skeletonCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#F1EFE8",
-    gap: 8,
-    padding: 10,
-  },
-  skeletonUser: {
-    width: 120,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: "#F1EFE8",
-  },
-  skeletonPhoto: {
-    width: "100%",
-    height: 200,
-    borderRadius: 8,
-    backgroundColor: "#F1EFE8",
-  },
-  skeletonText: {
-    width: "60%",
-    height: 14,
-    borderRadius: 8,
-    backgroundColor: "#F1EFE8",
-  },
-  photoContainer: { position: "relative" },
-  heartOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(0,0,0,0.15)",
-  },
-  heartEmoji: { fontSize: 80 },
-});
